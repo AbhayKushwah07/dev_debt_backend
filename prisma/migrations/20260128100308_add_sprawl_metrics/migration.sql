@@ -1,0 +1,32 @@
+-- DropForeignKey
+ALTER TABLE "DebtMetric" DROP CONSTRAINT "DebtMetric_scanId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "Scan" DROP CONSTRAINT "Scan_repositoryId_fkey";
+
+-- AlterTable
+ALTER TABLE "DebtMetric" ADD COLUMN     "complexityScore" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN     "couplingScore" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN     "duplicationRatio" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN     "loc" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "normalizedLOC" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN     "responsibilityScore" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN     "sprawlLevel" TEXT NOT NULL DEFAULT 'clean',
+ADD COLUMN     "sprawlScore" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ALTER COLUMN "cyclomaticComplexity" SET DEFAULT 0,
+ALTER COLUMN "cyclomaticComplexity" SET DATA TYPE DOUBLE PRECISION,
+ALTER COLUMN "duplicatedLogicScore" SET DEFAULT 0,
+ALTER COLUMN "aiEntropyScore" SET DEFAULT 0,
+ALTER COLUMN "totalDebtScore" SET DEFAULT 0;
+
+-- AlterTable
+ALTER TABLE "Scan" ADD COLUMN     "analyzedFiles" INTEGER,
+ADD COLUMN     "avgComplexity" DOUBLE PRECISION,
+ADD COLUMN     "avgSprawlScore" DOUBLE PRECISION,
+ADD COLUMN     "totalFiles" INTEGER;
+
+-- AddForeignKey
+ALTER TABLE "Scan" ADD CONSTRAINT "Scan_repositoryId_fkey" FOREIGN KEY ("repositoryId") REFERENCES "Repository"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DebtMetric" ADD CONSTRAINT "DebtMetric_scanId_fkey" FOREIGN KEY ("scanId") REFERENCES "Scan"("id") ON DELETE CASCADE ON UPDATE CASCADE;

@@ -1,0 +1,94 @@
+version: '3.8'
+
+services:
+  # Main Backend API
+  backend:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: devdebt_backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://devdebt:${DB_PASSWORD:-password}@postgres:5432/devdebt?schema=public
+      - REDIS_URL=redis://redis:6379
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+      - JWT_SECRET=${JWT_SECRET}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:8080}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - devdebt-network
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock  # For running analyzer containers
+
+  # Background Worker for Scans
+  worker:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: devdebt_worker
+    restart: unless-stopped
+    command: ["node", "src/workers/scanWorker.js"]
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://devdebt:${DB_PASSWORD:-password}@postgres:5432/devdebt?schema=public
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - devdebt-network
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock  # For running analyzer containers
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: devdebt_postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: devdebt
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+      POSTGRES_DB: devdebt
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - devdebt-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devdebt"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis for Job Queue
+  redis:
+    image: redis:7-alpine
+    container_name: devdebt_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - devdebt-network
+    command: redis-server --appendonly yes
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  devdebt-network:
+    driver: bridge

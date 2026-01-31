@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          Int      @id @default(autoincrement())
+  githubId    String   @unique
+  username    String
+  displayName String?
+  avatarUrl   String?
+  accessToken String?  // Encrypt in production!
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  repositories Repository[]
+}
+
+model Repository {
+  id          Int      @id @default(autoincrement())
+  githubRepoId String  @unique // unique ID from GitHub
+  name        String
+  fullName    String
+  owner       String
+  private     Boolean  @default(false)
+  htmlUrl     String
+  cloneUrl    String
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  scans       Scan[]
+}
+
+model Scan {
+  id           Int      @id @default(autoincrement())
+  repositoryId Int
+  repository   Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  status       ScanStatus @default(PENDING)
+  startedAt    DateTime?
+  completedAt  DateTime?
+  
+  // Project-level summary
+  totalFiles       Int?
+  analyzedFiles    Int?
+  avgSprawlScore   Float?
+  avgComplexity    Float?
+  
+  metrics     DebtMetric[]
+  createdAt   DateTime @default(now())
+}
+
+model DebtMetric {
+  id          Int      @id @default(autoincrement())
+  scanId      Int
+  scan        Scan     @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  filePath    String
+  loc         Int      @default(0)  // Raw lines of code
+  
+  // Sprawl Formula Metrics (S = w1*N + w2*C + w3*D + w4*R + w5*K)
+  normalizedLOC        Float  @default(0)  // N - Size sprawl (actual/ideal)
+  complexityScore      Float  @default(0)  // C - Cyclomatic complexity (CC/max)
+  duplicationRatio     Float  @default(0)  // D - Copy-paste ratio
+  responsibilityScore  Float  @default(0)  // R - SRP violations
+  couplingScore        Float  @default(0)  // K - Dependency sprawl
+  
+  // Legacy/computed metrics
+  cyclomaticComplexity Float  @default(0)  // Raw CC value
+  duplicatedLogicScore Float  @default(0)  // Percentage
+  aiEntropyScore       Float  @default(0)  // AI entropy factor
+  
+  // Sprawl Results
+  sprawlScore          Float  @default(0)  // Final weighted score
+  sprawlLevel          String @default("clean")  // clean/mild/high/severe
+  totalDebtScore       Float  @default(0)  // Adjusted sprawl score
+  
+  details     Json?    // Store detailed analysis results
+  
+  createdAt   DateTime @default(now())
+}
+
+enum ScanStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}

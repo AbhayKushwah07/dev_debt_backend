@@ -1,0 +1,11 @@
+{
+    "name": "devdebt-analyzer",
+    "version": "1.0.0",
+    "description": "Static analysis container for DevDebt Visualizer",
+    "main": "analyze.js",
+    "dependencies": {
+        "acorn": "^8.11.0",
+        "acorn-walk": "^8.3.0",
+        "glob": "^10.3.0"
+    }
+}
