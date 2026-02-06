@@ -1,60 +1,12 @@
-version: '3.8'
-
 services:
-  # Main Backend API
-  backend:
-    build: 
-      context: .
-      dockerfile: Dockerfile
-    container_name: devdebt_backend
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    environment:
-      - PORT=3000
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://devdebt:${DB_PASSWORD:-password}@postgres:5432/devdebt?schema=public
-      - REDIS_URL=redis://redis:6379
-      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
-      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
-      - JWT_SECRET=${JWT_SECRET}
-      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:8080}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
-    networks:
-      - devdebt-network
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock  # For running analyzer containers
+  # ============================================
+  # INFRASTRUCTURE (Both Profiles)
+  # ============================================
 
-  # Background Worker for Scans
-  worker:
-    build: 
-      context: .
-      dockerfile: Dockerfile
-    container_name: devdebt_worker
-    restart: unless-stopped
-    command: ["node", "src/workers/scanWorker.js"]
-    environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://devdebt:${DB_PASSWORD:-password}@postgres:5432/devdebt?schema=public
-      - REDIS_URL=redis://redis:6379
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
-    networks:
-      - devdebt-network
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock  # For running analyzer containers
-
-  # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
     container_name: devdebt_postgres
+    profiles: [ "dev", "prod" ]
     restart: unless-stopped
     ports:
       - "5432:5432"
@@ -67,15 +19,15 @@ services:
     networks:
       - devdebt-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U devdebt"]
+      test: [ "CMD-SHELL", "pg_isready -U devdebt" ]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  # Redis for Job Queue
   redis:
     image: redis:7-alpine
     container_name: devdebt_redis
+    profiles: [ "dev", "prod" ]
     restart: unless-stopped
     ports:
       - "6379:6379"
@@ -84,10 +36,156 @@ services:
     networks:
       - devdebt-network
     command: redis-server --appendonly yes
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # DEVELOPMENT PROFILE
+  # ============================================
+
+  # Analyzer image builder - runs once to build the analyzer image
+  analyzer:
+    build:
+      context: ./docker/analyzer
+      dockerfile: Dockerfile
+    image: devdebt-analyzer:latest
+    container_name: devdebt_analyzer_build
+    profiles: [ "dev", "prod" ]
+    entrypoint: [ "echo", "Analyzer image built successfully" ]
+
+  backend-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: devdebt_backend_dev
+    profiles: [ "dev" ]
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://devdebt:${DB_PASSWORD:-password}@postgres:5432/devdebt?schema=public
+      - REDIS_URL=redis://redis:6379
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+      - GITHUB_CALLBACK_URL=${GITHUB_CALLBACK_URL:-http://localhost:3000/auth/github/callback}
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-key}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:4200}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      analyzer:
+        condition: service_completed_successfully
+    networks:
+      - devdebt-network
+    volumes:
+      - ./src:/app/src:ro
+      - ./prisma:/app/prisma:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: >
+      sh -c "npx prisma migrate deploy && nodemon --watch src src/server.js"
+
+  worker-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: devdebt_worker_dev
+    profiles: [ "dev" ]
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://devdebt:${DB_PASSWORD:-password}@postgres:5432/devdebt?schema=public
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend-dev:
+        condition: service_started
+      analyzer:
+        condition: service_completed_successfully
+    networks:
+      - devdebt-network
+    volumes:
+      - ./src:/app/src:ro
+      - ./docker:/app/docker:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: nodemon --watch src src/workers/scanWorker.js
+
+  # ============================================
+  # PRODUCTION PROFILE
+  # ============================================
+
+  backend-prod:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: devdebt_backend
+    profiles: [ "prod" ]
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://devdebt:${DB_PASSWORD}@postgres:5432/devdebt?schema=public
+      - REDIS_URL=redis://redis:6379
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+      - GITHUB_CALLBACK_URL=${GITHUB_CALLBACK_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - FRONTEND_URL=${FRONTEND_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      analyzer:
+        condition: service_completed_successfully
+    networks:
+      - devdebt-network
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: >
+      sh -c "npx prisma migrate deploy && npm start"
+
+  worker-prod:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: devdebt_worker
+    profiles: [ "prod" ]
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://devdebt:${DB_PASSWORD}@postgres:5432/devdebt?schema=public
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend-prod:
+        condition: service_started
+      analyzer:
+        condition: service_completed_successfully
+    networks:
+      - devdebt-network
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: [ "node", "src/workers/scanWorker.js" ]
 
 volumes:
   postgres_data:
   redis_data:
+
 
 networks:
   devdebt-network:

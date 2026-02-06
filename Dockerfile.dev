@@ -1,0 +1,29 @@
+# Get Docker CLI from official image
+FROM docker:cli AS docker-cli
+
+# Use full node image which has openssl and other deps pre-installed
+FROM node:20
+
+# Copy Docker CLI from the first stage
+COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
+
+# Install nodemon for hot-reload
+RUN npm install -g nodemon
+
+WORKDIR /app
+
+# Copy package files first for better caching
+COPY package*.json ./
+RUN npm install
+
+# Copy prisma schema and generate client
+COPY prisma ./prisma/
+RUN npx prisma generate
+
+# Copy source files (will be overwritten by volume mount in dev)
+COPY . .
+
+EXPOSE 3000
+
+# Use nodemon for hot-reload in development
+CMD ["nodemon", "--watch", "src", "src/server.js"]
