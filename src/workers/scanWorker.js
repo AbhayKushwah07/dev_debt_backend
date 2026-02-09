@@ -1,7 +1,7 @@
 const { Worker } = require('bullmq');
 const prisma = require('../prisma');
 const { connection } = require('./queue');
-const { runDockerAnalysis } = require('../services/docker');
+const { analyzeRepo } = require('../services/analyzer');
 
 /**
  * Scan Worker - Processes repository scan jobs
@@ -14,25 +14,21 @@ const { runDockerAnalysis } = require('../services/docker');
  */
 const scanWorker = new Worker('scan-queue', async (job) => {
   const { scanId, repositoryId, cloneUrl, accessToken } = job.data;
-  
+
   console.log(`[Worker] Starting scan ${scanId} for repository ${repositoryId}`);
 
   try {
     // Update scan status to RUNNING
     await prisma.scan.update({
       where: { id: scanId },
-      data: { 
+      data: {
         status: 'RUNNING',
         startedAt: new Date()
       }
     });
 
-    // Run Docker-based analysis
-    const analysisResults = await runDockerAnalysis({
-      cloneUrl,
-      accessToken,
-      scanId
-    });
+    // Run local analysis
+    const analysisResults = await analyzeRepo(cloneUrl, accessToken);
 
     // Store metrics in database
     if (analysisResults && analysisResults.files) {
@@ -76,7 +72,7 @@ const scanWorker = new Worker('scan-queue', async (job) => {
     // Update scan status to COMPLETED
     await prisma.scan.update({
       where: { id: scanId },
-      data: { 
+      data: {
         status: 'COMPLETED',
         completedAt: new Date()
       }
@@ -91,7 +87,7 @@ const scanWorker = new Worker('scan-queue', async (job) => {
     // Update scan status to FAILED
     await prisma.scan.update({
       where: { id: scanId },
-      data: { 
+      data: {
         status: 'FAILED',
         completedAt: new Date()
       }

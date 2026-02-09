@@ -46,16 +46,6 @@ services:
   # DEVELOPMENT PROFILE
   # ============================================
 
-  # Analyzer image builder - runs once to build the analyzer image
-  analyzer:
-    build:
-      context: ./docker/analyzer
-      dockerfile: Dockerfile
-    image: devdebt-analyzer:latest
-    container_name: devdebt_analyzer_build
-    profiles: [ "dev", "prod" ]
-    entrypoint: [ "echo", "Analyzer image built successfully" ]
-
   backend-dev:
     build:
       context: .
@@ -80,14 +70,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      analyzer:
-        condition: service_completed_successfully
     networks:
       - devdebt-network
     volumes:
       - ./src:/app/src:ro
       - ./prisma:/app/prisma:ro
-      - /var/run/docker.sock:/var/run/docker.sock
     command: >
       sh -c "npx prisma migrate deploy && nodemon --watch src src/server.js"
 
@@ -109,14 +96,11 @@ services:
         condition: service_healthy
       backend-dev:
         condition: service_started
-      analyzer:
-        condition: service_completed_successfully
     networks:
       - devdebt-network
     volumes:
       - ./src:/app/src:ro
       - ./docker:/app/docker:ro
-      - /var/run/docker.sock:/var/run/docker.sock
     command: nodemon --watch src src/workers/scanWorker.js
 
   # ============================================
@@ -147,12 +131,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      analyzer:
-        condition: service_completed_successfully
     networks:
       - devdebt-network
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
     command: >
       sh -c "npx prisma migrate deploy && npm start"
 
@@ -174,12 +154,8 @@ services:
         condition: service_healthy
       backend-prod:
         condition: service_started
-      analyzer:
-        condition: service_completed_successfully
     networks:
       - devdebt-network
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
     command: [ "node", "src/workers/scanWorker.js" ]
 
 volumes:
