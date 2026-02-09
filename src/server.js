@@ -1,6 +1,7 @@
 const app = require('./app');
 const config = require('./config');
 const prisma = require('./prisma');
+require('./workers/scanWorker'); // Start the BullMQ worker
 
 const startServer = async () => {
   try {
